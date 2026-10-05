@@ -1,30 +1,28 @@
-import curses
+class Player:
+    def __init__(self):
+        self.x = 2
+        self.y = 2
 
-class player:
-    player_x = 0
-    player_y = 0
+    def move(self, dx, dy):
+        self.x += dx
+        self.y += dy
 
-screen = curses.initscr()
-screen.keypad(True)
-curses.noecho()
 
-gamer = player()
-while True:
-    screen.clear()
-    screen.addch(gamer.player_y, gamer.player_x, '@')
-    screen.refresh()
+class MapSize:
+    def __init__(self, x=0, y=0):
+        self.x = x
+        self.y = y
 
-    key = screen.getch()
-    if key == curses.KEY_UP:
-        gamer.player_y = gamer.player_y - 1
-    elif key == curses.KEY_DOWN:
-        gamer.player_y = gamer.player_y + 1
-    elif key == curses.KEY_LEFT:
-        gamer.player_x = gamer.player_x - 1
-    elif key == curses.KEY_RIGHT:
-        gamer.player_x = gamer.player_x + 1
-    elif key == ord('q'):
-        break
 
-curses.endwin()
-print(f"Player position: ({gamer.player_x}, {gamer.player_y})")
+def ask_map_size():
+    print("введи размер карты")
+    x = int(input())
+    y = int(input())
+    return MapSize(x, y)
+
+
+if __name__ == "__main__":
+    import view
+    view.run()
+
+

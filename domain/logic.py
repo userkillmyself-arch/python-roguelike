@@ -8,17 +8,7 @@ class Player:
         self.y += dy
 
 
-class MapSize:
-    def __init__(self, x=0, y=0):
-        self.x = x
-        self.y = y
 
-
-def ask_map_size():
-    print("введи размер карты")
-    x = int(input())
-    y = int(input())
-    return MapSize(x, y)
 
 
 if __name__ == "__main__":

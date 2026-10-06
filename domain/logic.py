@@ -20,6 +20,16 @@ class Zombie(Enemy):
     damage = 1
     radius = 6
     move_every = 2
+    symbol = 'Z'
+    color = 3   # зелёный
+
+class Vampire(Enemy):
+    damage = 2
+    radius = 8
+    move_every = 4
+    symbol = 'V'
+    color = 2   # красный
+
 
 
 class Game:
@@ -38,6 +48,9 @@ class Game:
                 if tile == 'Z':
                     self.enemies.append(Zombie(x, y))
                     tiles[y][x] = '1'  # под зомби обычный пол
+                if tile == 'V':
+                    self.enemies.append(Vampire(x, y))
+                    tiles[y][x] = '1'  # под вампиром обычный пол
         self.player.x, self.player.y = self.find('S')
 
     def find(self, char):

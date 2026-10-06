@@ -43,11 +43,13 @@ def draw(screen, game):
                 screen.addch(y + 1, x + 1, 'F', curses.color_pair(3))
             elif tile == 'Z':
                 screen.addch(y + 1, x + 1, 'Z', curses.color_pair(3))
+            elif tile == 'V':
+                screen.addch(y + 1, x + 1, 'V', curses.color_pair(3))
             else:
                 screen.addch(y + 1, x + 1, ' ')
 
-    for e in game.enemies:                      # зомби рисуем поверх карты
-        screen.addch(e.y + 1, e.x + 1, 'Z', curses.color_pair(3))
+    for e in game.enemies:
+        screen.addch(e.y + 1, e.x + 1, e.symbol, curses.color_pair(e.color))
 
     screen.refresh()
 

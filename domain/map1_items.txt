@@ -1,0 +1,7 @@
+Сокровища:
+class = treasures
+cost = 12
+
+Зелье здоровья:
+class = heal
+cost = 5

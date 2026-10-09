@@ -1,14 +1,17 @@
-import os
+import os, sys
+
+BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+LEVELS_DIR = os.path.join(BASE, "levels")
 
 def load_map(level=1):
-    path = f"map{level}.txt"
+    path = os.path.join(LEVELS_DIR, f"map{level}.txt")
     if not os.path.exists(path):
         return None
     with open(path, encoding="utf-8") as f:
         return [list(line.rstrip("\n")) for line in f]
 
 def load_items(level=1):
-    path = f"map{level}_items.txt"
+    path = os.path.join(LEVELS_DIR, f"map{level}_items.txt")
     if not os.path.exists(path):
         return []
     items = []

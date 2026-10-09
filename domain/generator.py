@@ -1,38 +1,52 @@
+"""Генератор уровней (BSP): 9 комнат, соединённых коридорами.
+
+Запуск:  python3 generator.py                  - 5 уровней в папку levels/
+         python3 generator.py --levels 21 --seed 1
+
+Пишет mapN.txt и mapN_items.txt. Последний уровень содержит F вместо X.
+Из кода: generate_all(levels, out, seed). Файлы с теми же номерами перезаписываются.
+"""
 import argparse
 import os
 import random
 from collections import deque
 
-# параметры 
-WIDTH, HEIGHT = 60, 22         
-ROOMS = 9                     
+DEFAULT_OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "levels")
+
+# --- параметры ---------------------------------------------------------
+WIDTH, HEIGHT = 60, 22        # размер карты
+ROOMS = 9                     # комнат на уровень
 ROOM_MIN_W, ROOM_MIN_H = 6, 4
 
-ENEMIES_START = 3
-ENEMIES_STEP = 2
-ITEMS_MIN, ITEMS_MAX = 2, 4
+ENEMIES_START = 3             # врагов на 1 уровне
+ENEMIES_STEP = 2              # прирост врагов с каждым уровнем
+# Полезные предметы на карте (сокровища сюда не входят - они выпадают с врагов).
+USEFUL_START = 8              # предметов на первом уровне
+USEFUL_END = 3                # предметов на последнем уровне, между ними убывает плавно
 
-# название, class в items-файле, диапазон стоимости
-ITEM_CATALOG = [
-    ("Сокровища", "treasures", (8, 20)),
-    ("Зелье здоровья", "heal", (5, 5)),
+# Каждый тип: название, class из ITEM_TYPES в logic.py, диапазоны характеристик.
+# Новые типы (оружие, улучшения) добавляйте сюда.
+USEFUL_ITEMS = [
+    {"name": "Зелье здоровья", "class": "heal", "stats": {"cost": (5, 5)}},
+    # {"name": "Меч", "class": "weapon", "stats": {"cost": (10, 15), "damage": (1, 3)}},
 ]
+GUARANTEED = ["heal"]         # классы, которые есть на каждом уровне хотя бы раз
 
 WALL, FLOOR = '0', '1'
 MIN_LEAF_W = ROOM_MIN_W + 2
 MIN_LEAF_H = ROOM_MIN_H + 2
 
 
-# BSP 
+# --- BSP ---------------------------------------------------------------
 class Leaf:
     def __init__(self, x, y, w, h):
         self.x, self.y, self.w, self.h = x, y, w, h
         self.left = self.right = None
-        self.room = None
+        self.room = None          # (x, y, w, h), только у листьев
 
     def split(self):
-        can_v = self.w >= 2 * MIN_LEAF_W
-        can_h = self.h >= 2 * MIN_LEAF_H
+        can_v = self.w >= 2 * MIN_LEAF_W      # разрез вертикальной линией
+        can_h = self.h >= 2 * MIN_LEAF_H      # разрез горизонтальной линией
         if not (can_v or can_h):
             return False
         if can_v and can_h:
@@ -103,6 +117,7 @@ def carve_corridor(grid, a, b):
 
 
 def connect(grid, node):
+    """Для каждого внутреннего узла соединяем по комнате из обеих веток."""
     if node.room:
         return
     connect(grid, node.left)
@@ -112,7 +127,7 @@ def connect(grid, node):
     carve_corridor(grid, center(a), center(b))
 
 
-# проверки
+# --- проверки ----------------------------------------------------------
 def bfs(grid, start):
     dist = {start: 0}
     queue = deque([start])
@@ -132,7 +147,7 @@ def is_connected(grid, rooms):
     return len(dist) == floor and all(center(r) in dist for r in rooms)
 
 
-#наполнение 
+# --- наполнение --------------------------------------------------------
 def room_cells(room):
     x, y, w, h = room
     return [(xx, yy) for yy in range(y, y + h) for xx in range(x, x + w)]
@@ -142,12 +157,29 @@ def enemy_count(level):
     return ENEMIES_START + ENEMIES_STEP * (level - 1)
 
 
+def useful_count(level, total):
+    """Количество полезных предметов: плавно от USEFUL_START до USEFUL_END."""
+    if total <= 1:
+        return USEFUL_START
+    t = (level - 1) / (total - 1)
+    count = round(USEFUL_START + (USEFUL_END - USEFUL_START) * t)
+    return max(len(GUARANTEED), count)
+
+
+def roll_item(template):
+    item = {"name": template["name"], "class": template["class"]}
+    for key, (lo, hi) in template["stats"].items():
+        item[key] = random.randint(lo, hi)
+    return item
+
+
 def pick_enemy(level):
     vampire_chance = min(0.6, 0.1 + 0.15 * (level - 1))
     return 'V' if random.random() < vampire_chance else 'Z'
 
 
 def generate_level(level, total):
+    """Возвращает (строки карты, список предметов, комнаты)."""
     while True:
         root, leaves = build_tree()
         if root is None:
@@ -163,17 +195,17 @@ def generate_level(level, total):
             break
 
     start_room = random.choice(rooms)
-    sx, sy = center(start_room)
+    sx, sy = random.choice(room_cells(start_room))   # случайная клетка стартовой комнаты
     grid[sy][sx] = 'S'
 
-    # выход в самой далёкой комнате
+    # выход - в самой далёкой (по пути) комнате
     dist = bfs(grid, (sx, sy))
     others = [r for r in rooms if r != start_room]
     exit_room = max(others, key=lambda r: dist[center(r)])
     ex, ey = center(exit_room)
     grid[ey][ex] = 'F' if level == total else 'X'
 
-    # враги и предметы только вне стартовой комнаты
+    # враги и предметы - только вне стартовой комнаты
     free = [c for r in others for c in room_cells(r) if c != (ex, ey)]
     random.shuffle(free)
 
@@ -181,26 +213,32 @@ def generate_level(level, total):
         x, y = free.pop()
         grid[y][x] = pick_enemy(level)
 
+    # гарантированные классы + остальное случайно из списка полезных
+    templates = [next(t for t in USEFUL_ITEMS if t["class"] == cls) for cls in GUARANTEED]
+    while len(templates) < useful_count(level, total):
+        templates.append(random.choice(USEFUL_ITEMS))
     items = []
-    for _ in range(min(random.randint(ITEMS_MIN, ITEMS_MAX), len(free))):
+    for template in templates[:len(free)]:
         x, y = free.pop()
         grid[y][x] = 'i'
-        name, cls, (lo, hi) = random.choice(ITEM_CATALOG)
-        items.append((name, cls, random.randint(lo, hi)))
+        items.append(roll_item(template))
 
     return [''.join(row) for row in grid], items, rooms
 
 
-# запись
+# --- запись файлов -----------------------------------------------------
 def write_level(out, n, rows, items):
     with open(os.path.join(out, f"map{n}.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(rows) + "\n")
     with open(os.path.join(out, f"map{n}_items.txt"), "w", encoding="utf-8") as f:
-        for name, cls, cost in items:
-            f.write(f"{name}:\nclass = {cls}\ncost = {cost}\n\n")
+        for item in items:
+            f.write(f"{item['name']}:\n")
+            f.write(f"class = {item['class']}\n")
+            for key, value in item.items():
+                if key not in ("name", "class"):
+                    f.write(f"{key} = {value}\n")
+            f.write("\n")
 
-
-DEFAULT_OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "levels")
 
 def generate_all(levels=5, out=DEFAULT_OUT, seed=None):
     if seed is not None:
@@ -209,6 +247,7 @@ def generate_all(levels=5, out=DEFAULT_OUT, seed=None):
     for n in range(1, levels + 1):
         rows, items, _ = generate_level(n, levels)
         write_level(out, n, rows, items)
+        print(f"уровень {n}: врагов {enemy_count(n)}, предметов {len(items)}")
 
 
 def main():

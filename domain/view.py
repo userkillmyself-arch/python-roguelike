@@ -25,14 +25,14 @@ def draw(screen, game):
     w = len(game.tiles[0])
 
     draw_frame(screen, h, w)
-    screen.addstr(h + 2, 0, f"[{'█' * game.player.health:<10}]")   # вместо Player.health
+    p = game.player
+    screen.addstr(h + 2, 0, f"[{'█' * p.health_blocks:<{p.max_blocks}}]")  # вместо Player.health
     screen.addstr(h + 3, 0, "↑ ↓ ← → Q   E - инвентарь")
     if game.pending_item:
         screen.addstr(h + 4, 0, f"Поднять «{game.pending_item.name}»? (y/n)")
-    screen.addstr(h + 5, 0, f"position: ({game.player.x}, {game.player.y})")
 
     if DEBUG:
-        draw_debug(screen, game, h + 7)
+        draw_debug(screen, game, w)      # было: draw_debug(screen, game, h + 7)
 
     for y, row in enumerate(game.tiles):
         for x, tile in enumerate(row):
@@ -94,14 +94,18 @@ def run(screen, game):
 
 DEBUG = True
 
-def draw_debug(screen, game, y):
+def draw_debug(screen, game, w):
     rows, cols = screen.getmaxyx()
-    lines = [f"{e.name:<8} hp {e.health}/{e.max_health}  agi {e.agility}  str {e.strength}  ({e.x},{e.y})"
-             for e in [game.player, *game.enemies]]
-    lines += game.log
+    x = w + 4                                  # правее рамки карты
+    p = game.player
+    lines = [f"{p.name:<8} hp {p.health}/{p.max_health}  agi {p.agility}  str {p.strength}  ({p.x},{p.y})"]
+    lines += game.log                          # события боя сразу под игроком
+    lines.append("")
+    lines += [f"{e.name:<8} hp {e.health}/{e.max_health}  agi {e.agility}  str {e.strength}  ({e.x},{e.y})"
+              for e in game.enemies]
     for i, line in enumerate(lines):
-        if y + i < rows - 1:
-            screen.addstr(y + i, 0, line[:cols - 1])
+        if i < rows - 1 and x < cols - 1:
+            screen.addstr(i, x, line[:cols - x - 1])
 
 
 def show_inventory(screen, game):

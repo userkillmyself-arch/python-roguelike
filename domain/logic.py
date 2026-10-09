@@ -1,12 +1,15 @@
 import random
 
+SCALE = 10         # масштаб: 1 блок полоски здоровья = 10 единиц
+GROWTH = 1.08      # множитель характеристик врагов за каждый уровень
+
 
 class Entity:
     name = "Entity"
-    max_health = 10
-    agility = 3      # ловкость
-    strength = 1     # сила
-    weapon = 0       # модификатор урона от оружия
+    max_health = 10 * SCALE
+    agility = 3                    # ловкость
+    strength = 1 * SCALE           # сила
+    weapon = 0                     # модификатор оружия (тоже в единицах ×10)
 
     def __init__(self, x=0, y=0):
         self.x = x
@@ -17,52 +20,73 @@ class Entity:
     def alive(self):
         return self.health > 0
 
+    @property
+    def health_blocks(self):       # для отрисовки, минимум 1 блок пока жив
+        return -(-self.health // SCALE)
+
+    @property
+    def max_blocks(self):
+        return self.max_health // SCALE
+
 
 class Player(Entity):
     name = "Player"
-    max_health = 10
+    max_health = 10 * SCALE        # 100
     agility = 3
-    strength = 2
+    strength = 2 * SCALE           # 20
 
     def __init__(self, x=0, y=0):
         super().__init__(x, y)
         self.inventory = []
+
+    @property
+    def treasure(self):
+        return sum(i.cost for i in self.inventory if isinstance(i, Treasure))
+
 
 class Enemy(Entity):
     symbol = '?'
     color = 3
     radius = 6        # радиус враждебности
     move_every = 2    # действует раз в N кадров
+    loot = 5          # базовая ценность сокровищ с врага
 
-    def __init__(self, x=0, y=0):
+    def __init__(self, x=0, y=0, level=1):
         super().__init__(x, y)
         self.timer = 0
+        self.level = level
+        k = GROWTH ** (level - 1)
+        self.max_health = round(self.max_health * k)
+        self.health = self.max_health
+        self.strength = round(self.strength * k)
+        self.agility += (level - 1) // 3   # ловкость растёт медленно
 
 
 class Zombie(Enemy):
     name = "Zombie"
     symbol = 'Z'
     color = 3
-    max_health = 5
+    max_health = 5 * SCALE         # 50
     agility = 2
-    strength = 1
+    strength = 1 * SCALE           # 10
     radius = 6
     move_every = 2
+    loot = 5
 
 
 class Vampire(Enemy):
     name = "Vampire"
     symbol = 'V'
     color = 2
-    max_health = 8
+    max_health = 8 * SCALE         # 80
     agility = 5
-    strength = 2
+    strength = 2 * SCALE           # 20
     radius = 8
     move_every = 4
+    loot = 10
 
 
 ENEMY_TYPES = {'Z': Zombie, 'V': Vampire}
-
 
 
 class Item:
@@ -86,44 +110,50 @@ def make_item(data):
     return ITEM_TYPES[data['class']](data['name'], int(data['cost']))
 
 
-
-
-
-
 def hit_chance(attacker, target):
     chance = 0.6 + 0.05 * (attacker.agility - target.agility)
     return min(0.95, max(0.1, chance))
 
 
 def attack(attacker, target):
-    # Возвращает нанесённый урон 0 - промах
-    #  попадание
+    # Возвращает нанесённый урон, 0 - промах
+    # 1. попадание
     if random.random() > hit_chance(attacker, target):
         return 0
-    #  расчёт урона
+    # 2. расчёт урона
     damage = attacker.strength + attacker.weapon
-    #  применение урона
+    # 3. применение урона
     target.health = max(0, target.health - damage)  # max нужен чтобы не уходило в минус
     return damage
 
 
 class Game:
-    def __init__(self, load_level):
+    def __init__(self, load_level, load_items):
         self.load_level = load_level
+        self.load_items = load_items
         self.level = 1
-        self.result = None   # None - идёт игра, 1 - победа, 0 - поражение
+        self.result = None            # None - идёт игра, 1 - победа, 0 - поражение
         self.log = []
+        self.pending_item = None      # предмет, о котором ждём ответ y/n
         self.player = Player()
-        self._setup(load_level(self.level))
+        self._setup(load_level(self.level), load_items(self.level))
 
-    def _setup(self, tiles):
+    def _setup(self, tiles, items_data):
         self.tiles = tiles
         self.enemies = []
+        self.items = {}               # {(x, y): Item}
+        n = 0
         for y, row in enumerate(tiles):
             for x, tile in enumerate(row):
                 if tile in ENEMY_TYPES:
-                    self.enemies.append(ENEMY_TYPES[tile](x, y))
-                    tiles[y][x] = '1'  # под врагом обычный пол, чтобы не оставлять следов
+                    self.enemies.append(ENEMY_TYPES[tile](x, y, self.level))
+                    tiles[y][x] = '1'  # под врагом обычный пол
+                elif tile == 'i':
+                    if n >= len(items_data):
+                        raise ValueError(f"на уровне {self.level} больше 'i', чем предметов в файле")
+                    self.items[(x, y)] = make_item(items_data[n])
+                    n += 1
+                    tiles[y][x] = '1'
         self.player.x, self.player.y = self.find('S')
 
     def find(self, char):
@@ -138,7 +168,7 @@ class Game:
         if tiles is None:
             return
         self.level += 1
-        self._setup(tiles)
+        self._setup(tiles, self.load_items(self.level))
 
     def is_walkable(self, x, y):
         return (0 <= y < len(self.tiles)
@@ -159,6 +189,10 @@ class Game:
             self.log.append(f"{attacker.name} -> {target.name}: промах")
         if not target.alive:
             self.log.append(f"{target.name} погиб")
+            if isinstance(target, Enemy):
+                value = target.loot * self.level
+                self.player.inventory.append(Treasure("Сокровища", value))
+                self.log.append(f"+{value} сокровищ")
         self.log = self.log[-4:]
 
     def move_player(self, dx, dy):
@@ -167,7 +201,7 @@ class Game:
         nx, ny = self.player.x + dx, self.player.y + dy
         target = self.enemy_at(nx, ny)
         if target:
-            self._fight(self.player, target)
+            self._fight(self.player, target)      # движение в сторону врага = атака
         elif self.is_walkable(nx, ny):
             self.player.x, self.player.y = nx, ny
             tile = self.tiles[ny][nx]
@@ -215,41 +249,6 @@ class Game:
                 e.x, e.y = nx, ny
                 break
 
-    def __init__(self, load_level, load_items):
-        self.load_level = load_level
-        self.load_items = load_items
-        self.level = 1
-        self.result = None
-        self.log = []
-        self.pending_item = None      # предмет, о котором ждём ответ y/n
-        self.player = Player()
-        self._setup(load_level(self.level), load_items(self.level))
-
-    def _setup(self, tiles, items_data):
-        self.tiles = tiles
-        self.enemies = []
-        self.items = {}               # {(x, y): Item}
-        n = 0
-        for y, row in enumerate(tiles):
-            for x, tile in enumerate(row):
-                if tile in ENEMY_TYPES:
-                    self.enemies.append(ENEMY_TYPES[tile](x, y))
-                    tiles[y][x] = '1'
-                elif tile == 'i':
-                    if n >= len(items_data):
-                        raise ValueError(f"на уровне {self.level} больше 'i', чем предметов в файле")
-                    self.items[(x, y)] = make_item(items_data[n])
-                    n += 1
-                    tiles[y][x] = '1'
-        self.player.x, self.player.y = self.find('S')
-
-    def next_level(self):
-        tiles = self.load_level(self.level + 1)
-        if tiles is None:
-            return
-        self.level += 1
-        self._setup(tiles, self.load_items(self.level))
-
     def pick_up(self):
         item = self.pending_item
         if item is None:
@@ -260,20 +259,3 @@ class Game:
 
     def decline(self):
         self.pending_item = None
-
-def load_items(level=1):
-    path = f"map{level}_items.txt"
-    if not os.path.exists(path):
-        return []
-    items = []
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            if line.endswith(":"):
-                items.append({"name": line[:-1]})
-            elif "=" in line:
-                key, value = line.split("=", 1)
-                items[-1][key.strip()] = value.strip()
-    return items
